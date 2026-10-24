@@ -168,4 +168,5 @@ iPhone app and a Docker image. More in [what comes next](docs/WHAT_COMES_NEXT.md
 - [`fleet/`](fleet/): every order, report, review and decision behind this code, and [`fleet/preparation/`](fleet/preparation/), the advisor's plan.
 - [saphan.ai](https://saphan.ai/) and [docs.saphan.ai](https://docs.saphan.ai/docs): the product and its documentation.
 
-Licence: [Apache-2.0](LICENSE).
+Licence: the code is [Apache-2.0](LICENSE); the guide and the build record (the Markdown pages, `docs/` and `fleet/`) are
+[CC BY 4.0](LICENSE-docs).

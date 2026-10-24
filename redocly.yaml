@@ -1,0 +1,8 @@
+extends:
+  - recommended
+
+rules:
+  # The server runs on your own machine, so localhost is the right address.
+  no-server-example.com: off
+  # A response example that does not match its schema is a broken contract, not a warning.
+  no-invalid-media-type-examples: error

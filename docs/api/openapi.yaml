@@ -1,0 +1,329 @@
+openapi: 3.1.0
+info:
+  title: QuakeWatch server API
+  version: 1.0.0
+  summary: Earthquakes, and which of them cross a region's alert threshold.
+  description: |
+    The contract comes first. The server, the mock and the apps are all built against this file.
+    The server listens on port 8080. There is no authentication.
+
+    The mock promises only the success examples: it never validates input and never answers an error.
+    The error responses are described here for the real server, which is tested against all of them:
+    it answers no status that an operation does not declare here, and no error code that is not shown here.
+
+    **Errors** all have one shape, `{"error": <code>, "message": <sentence>}`.
+    `400` is a request the server refuses: the examples under it list every code (`unknown_region`, `bad_since`,
+    `bad_threshold`, `body_too_large`, `bad_request`). `500` (`unavailable`) is the store failing; every
+    operation that reads the store can answer it.
+    `404` (`not_found`) is a path, or a method on a path, that is in no operation below; OpenAPI has no
+    operation for it, so it is described here. An unreadable request path answers `400` (`bad_request`) the same way.
+    A `PUT` whose body is over 16 KiB answers `400` (`body_too_large`) before its path is looked at, on any path.
+
+    **Regions** are a closed list. Each one is a latitude/longitude box:
+
+    | region | latitude | longitude |
+    |---|---|---|
+    | `southeast-asia` | -11 to 28 | 92 to 141 |
+    | `japan` | 24 to 46 | 122 to 146 |
+    | `western-north-america` | 30 to 60 | -170 to -115 |
+    | `mediterranean` | 30 to 46 | -6 to 37 |
+    | `south-america` | -56 to 13 | -82 to -34 |
+
+    An **alert** is an event inside a region's box that is at least as strong as the region's
+    minimum magnitude and no deeper than its maximum depth.
+  license:
+    name: Apache 2.0
+    identifier: Apache-2.0
+servers:
+  - url: http://localhost:8080
+    description: Your own machine
+security: []
+tags:
+  - name: events
+    description: Earthquakes read from the USGS feed.
+  - name: thresholds
+    description: The per-region minimum magnitude and maximum depth.
+  - name: alerts
+    description: Events that cross their region's threshold.
+  - name: health
+    description: Is the server up.
+paths:
+  /api/v1/events:
+    get:
+      operationId: listEvents
+      summary: List earthquakes
+      tags: [events]
+      parameters:
+        - name: region
+          in: query
+          description: Only events inside this region's box. Omit for all regions.
+          schema:
+            $ref: '#/components/schemas/Region'
+        - name: since
+          in: query
+          description: Only events at or after this time (RFC 3339, UTC).
+          schema:
+            type: string
+            format: date-time
+            examples: ['2026-10-20T00:00:00Z']
+      responses:
+        '200':
+          description: Events, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventList'
+              example:
+                events:
+                  - id: us7000abcd
+                    time: '2026-10-21T03:14:07Z'
+                    magnitude: 5.4
+                    depthKm: 35.2
+                    lat: 1.23
+                    lon: 126.4
+                    place: 90 km NNW of Ternate, Indonesia
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/v1/thresholds/{region}:
+    parameters:
+      - $ref: '#/components/parameters/RegionPath'
+    get:
+      operationId: getThreshold
+      summary: Read a region's alert threshold
+      tags: [thresholds]
+      responses:
+        '200':
+          description: The threshold.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Threshold'
+              example:
+                region: southeast-asia
+                minMagnitude: 5
+                maxDepthKm: 70
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+    put:
+      operationId: putThreshold
+      summary: Set a region's alert threshold
+      tags: [thresholds]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ThresholdInput'
+            example:
+              minMagnitude: 5
+              maxDepthKm: 70
+      responses:
+        '200':
+          description: The threshold now in force.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Threshold'
+              example:
+                region: southeast-asia
+                minMagnitude: 5
+                maxDepthKm: 70
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /api/v1/alerts:
+    get:
+      operationId: listAlerts
+      summary: List events that cross their region's threshold
+      tags: [alerts]
+      parameters:
+        - name: region
+          in: query
+          required: true
+          schema:
+            $ref: '#/components/schemas/Region'
+      responses:
+        '200':
+          description: Alerts, newest first.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertList'
+              example:
+                alerts:
+                  - region: southeast-asia
+                    quake:
+                      id: us7000abcd
+                      time: '2026-10-21T03:14:07Z'
+                      magnitude: 5.4
+                      depthKm: 35.2
+                      lat: 1.23
+                      lon: 126.4
+                      place: 90 km NNW of Ternate, Indonesia
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          $ref: '#/components/responses/ServerError'
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Is the server up?
+      tags: [health]
+      responses:
+        '200':
+          description: The server is up.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+              example:
+                status: ok
+        '500':
+          $ref: '#/components/responses/ServerError'
+components:
+  parameters:
+    RegionPath:
+      name: region
+      in: path
+      required: true
+      schema:
+        $ref: '#/components/schemas/Region'
+  responses:
+    BadRequest:
+      description: >-
+        The server refuses the request. `unknown_region`: the region is missing, empty or not on the list
+        (or a path segment that does not decode). `bad_since`: `since` is not an RFC 3339 UTC time.
+        `bad_threshold`: the PUT body is not `{"minMagnitude": <number>, "maxDepthKm": <number, 0 or more>}`.
+        `body_too_large`: the PUT body is over 16 KiB. `bad_request`: the request path cannot be read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          examples:
+            unknownRegion:
+              summary: Unknown region
+              value:
+                error: unknown_region
+                message: 'region must be one of: southeast-asia, japan, western-north-america, mediterranean, south-america'
+            badSince:
+              summary: Bad since
+              value:
+                error: bad_since
+                message: since must be an RFC 3339 UTC time such as 2026-10-20T00:00:00Z
+            badThreshold:
+              summary: Bad threshold
+              value:
+                error: bad_threshold
+                message: 'body must be {"minMagnitude": <number>, "maxDepthKm": <number, 0 or more>}: maxDepthKm is negative'
+            bodyTooLarge:
+              summary: Body too large
+              value:
+                error: body_too_large
+                message: the request body must be at most 16384 bytes
+            badRequest:
+              summary: Unreadable request
+              value:
+                error: bad_request
+                message: the request path cannot be read
+    ServerError:
+      description: The store cannot be read.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: unavailable
+            message: the store cannot be reached
+  schemas:
+    Region:
+      type: string
+      description: A named latitude/longitude box. The boxes are listed in the API description.
+      enum: [southeast-asia, japan, western-north-america, mediterranean, south-america]
+    Quake:
+      type: object
+      required: [id, time, magnitude, depthKm, lat, lon, place]
+      properties:
+        id:
+          type: string
+          description: The USGS event id.
+        time:
+          type: string
+          format: date-time
+          description: When it happened, RFC 3339, UTC.
+        magnitude:
+          type: number
+        depthKm:
+          type: number
+          description: Depth in kilometres.
+        lat:
+          type: number
+        lon:
+          type: number
+        place:
+          type: string
+          description: A human description of where.
+    EventList:
+      type: object
+      required: [events]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/Quake'
+    ThresholdInput:
+      type: object
+      required: [minMagnitude, maxDepthKm]
+      properties:
+        minMagnitude:
+          type: number
+          description: Alert on events at least this strong.
+        maxDepthKm:
+          type: number
+          description: Alert on events no deeper than this many kilometres.
+    Threshold:
+      allOf:
+        - $ref: '#/components/schemas/ThresholdInput'
+        - type: object
+          required: [region]
+          properties:
+            region:
+              $ref: '#/components/schemas/Region'
+    Alert:
+      type: object
+      required: [region, quake]
+      properties:
+        region:
+          $ref: '#/components/schemas/Region'
+        quake:
+          $ref: '#/components/schemas/Quake'
+    AlertList:
+      type: object
+      required: [alerts]
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+    Error:
+      type: object
+      description: The one error shape every failure uses.
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          description: A short stable code.
+        message:
+          type: string
+          description: A sentence for a person.
